@@ -19,6 +19,7 @@
     "macd": "^1.0.2",
     "moment": "^2.19.2",
     "nodemon": "^1.12.1",
+    "request": "^2.83.0",
     "request-promise-native": "^1.0.5",
     "suspend": "^0.7.0",
     "technicalindicators": "^1.0.21",
