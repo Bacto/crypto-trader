@@ -4,7 +4,8 @@ require('dotenv').config();
 
 import 'babel-polyfill';
 import Telegraf from 'telegraf';
-import macd from 'macd';
+// import macd from 'macd';
+import { MACD } from 'technicalindicators';
 import request from 'request-promise-native';
 import delay from 'timeout-as-promise';
 
@@ -65,13 +66,22 @@ import delay from 'timeout-as-promise';
     const datas = trades.result['60'].map(e => e[4]);
 
     // Get MACD statistics
-    const result = macd(datas, 10, 26, 9);
+    // const result = macd(datas, 10, 26, 9);
+    const result = MACD.calculate({
+      values: datas,
+      fastPeriod: 10,
+      slowPeriod: 26,
+      signalPeriod: 9,
+      SimpleMAOscillator: false,
+      SimpleMASignal: false
+    });
 
     // Get the last candle close price
     const lastCandleClosePrice = datas[datas.length - 1];
 
     // Get the last histogram value
-    const lastHistogramValue = result.histogram[result.histogram.length - 1];
+    const lastResult = result[result.length - 1];
+    const lastHistogramValue = lastResult.histogram;
 
     // Set action to buy if the last histogram value if positive, sale if negative
     const action = lastHistogramValue > 0 ? 'buy' : 'sale';
