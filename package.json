@@ -1,0 +1,27 @@
+{
+  "name": "cryptotrader",
+  "version": "1.0.0",
+  "description": "",
+  "main": "src/app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "NODE_PATH=src/ ./node_modules/.bin/nodemon -w src/ src/appDev.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "babel-plugin-transform-object-rest-spread": "^6.26.0",
+    "babel-polyfill": "^6.26.0",
+    "babel-preset-env": "^1.6.1",
+    "babel-register": "^6.26.0",
+    "dotenv": "^4.0.0",
+    "format-json": "^1.0.3",
+    "macd": "^1.0.2",
+    "moment": "^2.19.2",
+    "nodemon": "^1.12.1",
+    "request-promise-native": "^1.0.5",
+    "suspend": "^0.7.0",
+    "telegraf": "^3.15.3",
+    "timeout-as-promise": "^1.0.0"
+  }
+}
