@@ -5,7 +5,6 @@ require('dotenv').config();
 import 'babel-polyfill';
 import Telegraf from 'telegraf';
 import { MACD } from 'technicalindicators';
-import request from 'request-promise-native';
 import delay from 'timeout-as-promise';
 import { MongoClient } from 'mongodb';
 import ccxt from 'ccxt';
@@ -13,10 +12,15 @@ import ccxt from 'ccxt';
 (async () => {
   let lastValues = {};
 
+  // Users IDs (Telegram needs those IDs)
+  const users = {
+    // laurent: 224003278,
+    adrien: 170179231
+  };
 
-  // let gdax = new ccxt.gdax();
-  // let markets = await gdax.load_markets();
-  // console.log (gdax.id, markets);
+
+  const exchangeMarket = 'gdax';
+  const symbol = 'BTC/EUR';
 
 
   console.log('Bot is starting');
@@ -24,36 +28,40 @@ import ccxt from 'ccxt';
   console.log('Connection to the database');
   const db = await MongoClient.connect(process.env.MONGODB_URL);
 
+
+  const exchange = new ccxt[exchangeMarket]();
+  // const markets = await exchange.load_markets();
+  // console.log(markets[symbol]);
+
+  // console.log(exchange.rateLimit);
+
+  // const pairs = await exchange.publicGetSymbolsDetails();
+  // const marketIds = Object.keys(pairs['result']);
+  // const marketId = marketIds[0];
+  // const ticker = await exchange.publicGetTicker({ pair: marketId });
+  // console.log(ticker);
+
+
   // Initialize Telegraf to connect to Telegram
-  const bot = new Telegraf(process.env.TELEGRAM_TOKEN, { username: process.env.TELEGRAM_USERNAME });
+  let bot;
+  if (process.env.TELEGRAM_TOKEN) {
+    bot = new Telegraf(process.env.TELEGRAM_TOKEN, { username: process.env.TELEGRAM_USERNAME });
 
-  // When a user connects to the bot's chat for the first time
-  bot.start((ctx) => {
-    console.log('Chat started with: ' + JSON.stringify(ctx.from));
-    ctx.reply('Welcome!');
-  });
+    // When a user connects to the bot's chat for the first time
+    bot.start((ctx) => {
+      console.log('Chat started with: ' + JSON.stringify(ctx.from));
+      ctx.reply('Welcome!');
+    });
 
-  // When a user type "/values"
-  bot.command('values', (ctx) => {
-    ctx.reply(`Action: ${lastValues.todo.action}\nLast histogram value: ${lastValues.histogramValue}\nLast candle close price: ${lastValues.lastCandleClosePrice}\n`);
-  });
+    // When a user type "/values"
+    bot.command('values', (ctx) => {
+      ctx.reply(`Action: ${lastValues.todo.action}\nLast histogram value: ${lastValues.histogramValue}\nLast candle close price: ${lastValues.lastCandleClosePrice}\n`);
+    });
 
-  // Start the bot
-  bot.startPolling();
+    // Start the bot
+    bot.startPolling();
+  }
 
-
-  // const chatId = -1001340775946;
-  // Users IDs (Telegram needs those IDs)
-  const users = {
-    // laurent: 224003278,
-    adrien: 170179231
-  };
-
-  const market = 'gdax';
-
-  // We want n candles sinces x seconds.
-  const candlesSeconds = 60;
-  const candles = 480; // x * 60 seconds = ?h
 
   const actions = await db.collection('actions').find({}).sort({ date: -1 }).toArray();
   let status = actions[0] || {};
@@ -65,36 +73,34 @@ import ccxt from 'ccxt';
   while (true) {
     try {
       // Get current price
-      const priceResult = await request(
-        `https://api.cryptowat.ch/markets/${market}/btceur/price`,
-        { json: true }
-      );
-      const currentPrice = priceResult.result.price;
+      const ticker = await (exchange.fetchTicker(symbol));
+      const currentPrice = parseFloat(ticker.info.price).toFixed(2);
 
 
-      // Get trades from Cryptowat's API
-      const trades = await request(
-        `https://api.cryptowat.ch/markets/${market}/btceur/ohlc`,
-        {
-          json: true,
-          qs: {
-            periods: candlesSeconds, // number of seconds
-            after: Math.round(Date.now() / 1000) - candlesSeconds * candles, // since this unixtime
-            before: Math.round(Date.now() / 1000), // until this unixtime (current time)
-          }
-        });
-
-
-      // Format the trades received
-      // [ CloseTime, OpenPrice, HighPrice, LowPrice, ClosePrice, Volume ]
-      const datas = trades.result['60']
+      // Get OHLCV
+      // OHLCV format
+      // [
+      //   [
+      //       1504541580000, // UTC timestamp in milliseconds
+      //       4235.4,        // (O)pen price
+      //       4240.6,        // (H)ighest price
+      //       4230.0,        // (L)owest price
+      //       4230.7,        // (C)losing price
+      //       37.72941911    // (V)olume
+      //   ],
+      //   ...
+      // ]
+      const ohlcv = await exchange.fetchOHLCV(symbol, '1m');
+      ohlcv.reverse();
+      const closingPrices = ohlcv
         .map(e => e[4])
-        // .map((e, i) => { if (!i) { console.log(i); } return e; })
         .filter(e => e !== 0);
+
+
 
       // Get MACD statistics
       const result = MACD.calculate({
-        values: datas,
+        values: closingPrices,
         fastPeriod: 4, // 10
         slowPeriod: 10, // 26
         signalPeriod: 9, // 9
@@ -103,11 +109,11 @@ import ccxt from 'ccxt';
       });
 
       const histogramValue = result[result.length - 1].histogram;
-      const macdIs = histogramValueBefore < histogramValue ? 'growing' : 'declining';
+      const macdIs = histogramValue >= histogramValueBefore ? 'growing' : 'declining';
 
       const gain = status.action === 'buy' ? currentPrice - status.price : 0;
 
-      console.log(`${new Date()} - Price ${currentPrice.toFixed(2)} - Last ${status.action}@${status.price} - macdIs ${macdIs.padStart(9)} - Histogram ${Math.round(histogramValue).toString().padStart(5)} - gain ${Math.round(gain).toString().padStart(5)}`);
+      console.log(`${new Date()} - Price ${currentPrice} - Last ${status.action}@${status.price} - macdIs ${macdIs.padStart(9)} - Histogram ${Math.round(histogramValue).toString().padStart(5)} - gain ${Math.round(gain).toString().padStart(5)}`);
 
       // Set action to buy if the last histogram value if positive, sell if negative
       if (status.action === 'buy') {
@@ -172,7 +178,7 @@ import ccxt from 'ccxt';
 
         // Send the message to every user in "users"
         for (const nick in users) {
-          bot.telegram.sendMessage(users[nick], message);
+          bot && bot.telegram.sendMessage(users[nick], message);
         }
       }
 
